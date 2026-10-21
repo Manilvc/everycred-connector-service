@@ -1,0 +1,108 @@
+# Deployment of the connector service next to the EveryCRED services on
+# one host.
+#
+# nginx on the host strips its public prefix (for example /connector) and
+# proxies to 127.0.0.1:8050. MySQL is an existing server reached through
+# DATABASE_URL in .env; no database container is started.
+#
+#   docker compose build
+#   docker compose up -d          # runs migrations first, then the API
+#                                 # and the background worker
+#   docker compose logs -f api
+
+name: everycred-connector
+
+x-service-defaults: &service-defaults
+  # Built locally by default. A CD pipeline can set CONNECTOR_IMAGE to a
+  # pushed image and PULL_POLICY=always to deploy exactly what was tested.
+  image: ${CONNECTOR_IMAGE:-everycred-connector-service:latest}
+  env_file: [.env]
+  # Reach MySQL (or the holder service) running on the host as
+  # host.docker.internal.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  # Hardening: the app writes nothing to disk and needs no privileges.
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  # One-shot: applies Alembic migrations, then exits. The API waits for it.
+  migrate:
+    <<: *service-defaults
+    container_name: everycred-connector-migrate
+    command: ["migrate"]
+    restart: "no"
+    # Reuses the image `api` builds; two services building one tag in
+    # parallel race and fail.
+    pull_policy: ${PULL_POLICY:-never}
+
+  api:
+    <<: *service-defaults
+    container_name: everycred-connector-api
+    command: ["serve"]
+    build:
+      context: .
+      target: runtime
+    pull_policy: ${PULL_POLICY:-build}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      # Must match the nginx location; uvicorn uses it to build URLs.
+      ROOT_PATH: ${ROOT_PATH:-/connector}
+      PORT: "8050"
+      WEB_CONCURRENCY: "2"
+      # Only nginx on the host can reach the published port, and its
+      # requests arrive from the Docker bridge gateway.
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      # Loopback only: the service is reachable solely through nginx.
+      - "127.0.0.1:8050:8050"
+    restart: always
+    mem_limit: 512m
+    cpus: "1.0"
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8050/health/live', timeout=3).status == 200 else 1)"
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  # Delivers queued events to the holder service. Exactly one instance:
+  # outbox rows are not locked across processes.
+  worker:
+    <<: *service-defaults
+    container_name: everycred-connector-worker
+    command: ["worker"]
+    pull_policy: ${PULL_POLICY:-never}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+    restart: always
+    # The image's check calls the HTTP API, which the worker does not
+    # serve; this one checks that a worker round succeeded recently.
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--check"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    mem_limit: 256m
+    cpus: "0.5"
+    stop_grace_period: 30s
