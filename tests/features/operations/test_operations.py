@@ -75,10 +75,10 @@ async def test_item_operation_calls_the_named_source(
     assert source_request.method == "POST"
     assert source_request.headers["X-Holder-Email"] == "holder@example.com"
     assert json.loads(source_request.content) == {"answers": {"name": "Test"}}
-    assert "Origin" not in source_request.headers
+    assert "X-Tenant-ID" not in source_request.headers
 
 
-async def test_tenant_source_call_carries_the_tenant_origin(
+async def test_tenant_source_call_carries_the_tenant_id(
     client: AsyncClient,
     fake_sources: FakeSources,
     holder_headers: dict[str, str],
@@ -86,7 +86,7 @@ async def test_tenant_source_call_carries_the_tenant_origin(
     await _link_holder(client, "dcs-india", "holder@example.com")
     await client.patch(
         "/v1/sources/dcs-india",
-        json={"tenant_origin": "https://tenant-a.example.com"},
+        json={"tenant_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV"},
         headers=ADMIN_HEADERS,
     )
     fake_sources.handle("dcs-india.example.com", _dcs_ok)
@@ -105,7 +105,9 @@ async def test_tenant_source_call_carries_the_tenant_origin(
 
     assert response.status_code == 200
     source_request = fake_sources.requests[0]
-    assert source_request.headers["Origin"] == "https://tenant-a.example.com"
+    assert (
+        source_request.headers["X-Tenant-ID"] == "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+    )
 
 
 async def test_list_operation_fans_out_to_linked_sources(

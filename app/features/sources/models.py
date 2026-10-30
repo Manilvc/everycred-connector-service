@@ -14,9 +14,9 @@ class Source(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source signs its webhooks with are both needed in plain text at run
     time, so they are stored Fernet-encrypted rather than hashed.
 
-    ``tenant_origin`` is set when the source is one tenant of a shared
-    DCS backend: the DCS picks the tenant from the request's ``Origin``,
-    so every call to the source carries it.
+    ``tenant_id`` is set when the source is one tenant of a shared DCS
+    backend: every call to the source carries it as ``X-Tenant-ID``, so
+    the DCS uses that tenant's database and API key.
     """
 
     __tablename__ = "sources"
@@ -24,9 +24,7 @@ class Source(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(150))
     base_url: Mapped[str] = mapped_column(String(500))
-    tenant_origin: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
+    tenant_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     normalizer: Mapped[str] = mapped_column(String(50))
     encrypted_api_key: Mapped[str] = mapped_column(Text)
     encrypted_webhook_secret: Mapped[str] = mapped_column(Text)

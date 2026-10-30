@@ -2,6 +2,8 @@ from httpx import AsyncClient
 
 from tests.conftest import ADMIN_HEADERS, register_source
 
+TENANT_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+
 
 async def test_create_source_requires_admin_key(client: AsyncClient) -> None:
     response = await client.post(
@@ -129,42 +131,40 @@ async def test_list_sources_is_paginated(client: AsyncClient) -> None:
     assert [item["code"] for item in body["items"]] == ["dcs-edu"]
 
 
-async def test_tenant_origin_is_stored_without_a_trailing_slash(
-    client: AsyncClient,
-) -> None:
+async def test_tenant_id_is_stored_and_shown(client: AsyncClient) -> None:
     await register_source(client)
 
     response = await client.patch(
         "/v1/sources/dcs-india",
-        json={"tenant_origin": "https://tenant-a.example.com/"},
+        json={"tenant_id": TENANT_ID},
         headers=ADMIN_HEADERS,
     )
 
     assert response.status_code == 200
-    assert response.json()["tenant_origin"] == "https://tenant-a.example.com"
+    assert response.json()["tenant_id"] == TENANT_ID
 
 
-async def test_tenant_origin_with_a_path_is_rejected(
+async def test_tenant_id_with_unexpected_characters_is_rejected(
     client: AsyncClient,
 ) -> None:
     await register_source(client)
 
     response = await client.patch(
         "/v1/sources/dcs-india",
-        json={"tenant_origin": "https://tenant-a.example.com/login"},
+        json={"tenant_id": "tenant a/../b"},
         headers=ADMIN_HEADERS,
     )
 
     assert response.status_code == 422
 
 
-async def test_update_keeps_tenant_origin_unless_sent(
+async def test_update_keeps_tenant_id_unless_sent(
     client: AsyncClient,
 ) -> None:
     await register_source(client)
     await client.patch(
         "/v1/sources/dcs-india",
-        json={"tenant_origin": "https://tenant-a.example.com"},
+        json={"tenant_id": TENANT_ID},
         headers=ADMIN_HEADERS,
     )
 
@@ -175,9 +175,9 @@ async def test_update_keeps_tenant_origin_unless_sent(
     )
     cleared = await client.patch(
         "/v1/sources/dcs-india",
-        json={"tenant_origin": None},
+        json={"tenant_id": None},
         headers=ADMIN_HEADERS,
     )
 
-    assert kept.json()["tenant_origin"] == "https://tenant-a.example.com"
-    assert cleared.json()["tenant_origin"] is None
+    assert kept.json()["tenant_id"] == TENANT_ID
+    assert cleared.json()["tenant_id"] is None

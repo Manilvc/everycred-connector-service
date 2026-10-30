@@ -106,12 +106,14 @@ calls an internal API on the holder's behalf:
 X-API-Key: <the source API key registered in the connector>
 X-Holder-Email: holder@example.com
 X-Request-ID: <forwarded request id>
-Origin: <the source's tenant_origin, when set>
+X-Tenant-ID: <the source's tenant_id, when set>
 ```
 
 When several tenants share one DCS backend, each tenant is its own
-source and `Origin` carries the tenant's frontend origin, so the DCS
-resolves the tenant (and its database and API key) from it.
+source and `X-Tenant-ID` names the tenant, so the DCS uses that tenant's
+database and checks the key against that tenant's own
+`connector_source_api_key`. The DCS reads the header on the internal
+holder API only.
 
 The DCS must check the API key in constant time, resolve the holder by
 `X-Holder-Email` in the tenant, and scope every query to that holder,

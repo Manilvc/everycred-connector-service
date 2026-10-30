@@ -2,9 +2,9 @@
 
 Every call goes to the source's configured ``base_url`` with the
 source's own API key, so a source only ever receives the key it issued.
-A source that is one tenant of a shared DCS also gets its
-``tenant_origin`` as the ``Origin`` header, which is how the DCS picks
-the tenant (and its database) for a call without a user token.
+A source that is one tenant of a shared DCS also gets its ``tenant_id``
+as the ``X-Tenant-ID`` header, which is how the DCS picks the tenant
+(and its database and API key) for a call without a user token.
 Paths are built from fixed templates by the caller's users; nothing in
 a client request is used as a raw path or URL.
 """
@@ -26,7 +26,7 @@ from app.features.sources.models import Source
 logger = logging.getLogger(__name__)
 
 HOLDER_EMAIL_HEADER = "X-Holder-Email"
-ORIGIN_HEADER = "Origin"
+TENANT_ID_HEADER = "X-Tenant-ID"
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,8 +85,8 @@ class SourceCaller:
         }
         if holder_email is not None:
             headers[HOLDER_EMAIL_HEADER] = holder_email
-        if source.tenant_origin:
-            headers[ORIGIN_HEADER] = source.tenant_origin
+        if source.tenant_id:
+            headers[TENANT_ID_HEADER] = source.tenant_id
 
         try:
             response = await self.http_client.request(

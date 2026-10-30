@@ -51,7 +51,7 @@ Request:
 | `code` | Pattern above. Unique |
 | `name` | 1 to 150 characters |
 | `base_url` | http or https. No credentials, query, or fragment. Trailing `/` is removed |
-| `tenant_origin` | Optional. Scheme, host and optional port only (no path, query, credentials). Trailing `/` is removed. See [Tenants of a shared DCS](#tenants-of-a-shared-dcs) |
+| `tenant_id` | Optional. The tenant's uuid in the DCS: letters, digits and `-`, up to 100. See [Tenants of a shared DCS](#tenants-of-a-shared-dcs) |
 | `api_key` | 16 to 500 characters. Stored encrypted |
 | `normalizer` | Optional. Default `everycred_dcs`. Must be a registered normalizer |
 
@@ -63,7 +63,7 @@ Response `201 Created`:
   "code": "dcs-india",
   "name": "DCS India",
   "base_url": "https://dcs-india.example.com",
-  "tenant_origin": null,
+  "tenant_id": null,
   "normalizer": "everycred_dcs",
   "is_active": true,
   "created_at": "2026-10-21T10:00:00Z",
@@ -93,9 +93,9 @@ Returns one `SourceResponse`. Errors: 404 `source_not_found`.
 
 ### `PATCH /v1/sources/{source_code}`
 
-Changes any of `name`, `base_url`, `tenant_origin`, `api_key`,
+Changes any of `name`, `base_url`, `tenant_id`, `api_key`,
 `normalizer`, `is_active`. Only fields present in the body change, so
-`"tenant_origin": null` removes the origin and leaving it out keeps it.
+`"tenant_id": null` removes the tenant id and leaving it out keeps it.
 Unknown fields are rejected.
 
 Setting `is_active` to `false` stops all calls to the source. A verifier
@@ -147,7 +147,7 @@ Outbound calls (`caller.py`):
    false.
 2. It decrypts the API key and sends `X-API-Key`. When a holder is
    involved it also sends `X-Holder-Email`. When the source has a
-   `tenant_origin` it is sent as `Origin`.
+   `tenant_id` it is sent as `X-Tenant-ID`.
 3. The request goes to `f"{source.base_url}{path}"` with the source
    timeout (`SOURCE_TIMEOUT_SECONDS`).
 4. A timeout or transport error raises `SourceUnavailableError`.
@@ -162,12 +162,12 @@ template: a normalizer's `credential_path`, or an operation from
 ### Tenants of a shared DCS
 
 One DCS backend can serve several tenants, each with its own database.
-The DCS picks the tenant from the user's token or, for calls without
-one, from the `Origin` / `Host` header matched against its tenant
-domains. The connector's calls carry no user token, and every tenant
+Browser calls reach the right tenant through the user's token or the
+tenant's domain. The connector's calls have neither, and every tenant
 shares the backend's host, so the connector registers **one source per
-tenant** and sets `tenant_origin` to that tenant's frontend origin (the
-domain stored for the tenant in the DCS):
+tenant** and sets `tenant_id` to that tenant's uuid in the DCS. It is
+sent as `X-Tenant-ID`, which the DCS reads on its internal holder API
+only:
 
 ```json
 POST /v1/sources
@@ -175,15 +175,18 @@ POST /v1/sources
   "code": "dcs-tenant-a",
   "name": "DCS tenant A",
   "base_url": "https://api.example.com",
-  "tenant_origin": "https://tenant-a.example.com",
+  "tenant_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
   "api_key": "<tenant A's connector_source_api_key>"
 }
 ```
 
 Each tenant source has its own API key and webhook secret, set in that
-tenant's DCS config, so a call made with one tenant's key is refused by
-another tenant. Leave `tenant_origin` empty for a DCS with one tenant,
-or one whose tenants have their own API hosts.
+tenant's DCS config (`connector_source_api_key`,
+`connector_webhook_secret`). The DCS checks the key against the named
+tenant's own key only, and refuses a tenant id that is unknown or has
+no key of its own, so naming a tenant without its key gets nowhere.
+Leave `tenant_id` empty for a DCS with one tenant, or one whose tenants
+have their own API hosts.
 
 ## Data model
 
@@ -195,7 +198,7 @@ Table `sources` (`Source` model):
 | `code` | string(50) | Unique, indexed |
 | `name` | string(150) | |
 | `base_url` | string(500) | No trailing slash |
-| `tenant_origin` | string(255), null | Sent as `Origin`; no trailing slash |
+| `tenant_id` | string(100), null | Sent as `X-Tenant-ID` |
 | `normalizer` | string(50) | Name of a registered normalizer |
 | `encrypted_api_key` | text | Fernet ciphertext |
 | `encrypted_webhook_secret` | text | Fernet ciphertext |
@@ -203,7 +206,8 @@ Table `sources` (`Source` model):
 | `created_at`, `updated_at` | UTC datetime | |
 
 Created by `migrations/versions/2026_10_21_1602-748c4dbd1658_create_connector_tables.py`;
-`tenant_origin` added by `2026_10_30_1800-c2ba282c9fa0_source_tenant_origin.py`.
+`tenant_id` added by `2026_10_30_1900-1ab11f3eb6b5_source_tenant_id.py`
+(which drops the short-lived `tenant_origin` from `c2ba282c9fa0`).
 There is no delete endpoint. Sources are switched off with `is_active`.
 
 ## Configuration
