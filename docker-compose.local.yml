@@ -1,0 +1,80 @@
+# Local stack: the connector plus its own MySQL and Adminer, for
+# development machines only. Layered on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Inside a container 127.0.0.1 is the container itself, so the
+# DATABASE_URL in .env (written for `uv run` on the host) cannot reach a
+# database. This file overrides it to point at the `mysql` service on the
+# compose network. Real environment variables take precedence over .env.
+#
+# Needs LOCAL_DB_PASSWORD in .env (hex only, so it is safe inside a URL).
+#
+#   API      http://127.0.0.1:8050/docs
+#   Adminer  http://127.0.0.1:8081  (server: mysql)
+#   MySQL    127.0.0.1:3307 from the host; 3306 is usually taken by a
+#            MySQL installed on the host itself.
+
+x-local-database: &local-database
+  DATABASE_URL: "mysql+aiomysql://${LOCAL_DB_USER:-connector}:${LOCAL_DB_PASSWORD:?Set LOCAL_DB_PASSWORD in .env}@mysql:3306/${LOCAL_DB_NAME:-everycred_connector}?charset=utf8mb4"
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: everycred-connector-mysql
+    environment:
+      MYSQL_DATABASE: ${LOCAL_DB_NAME:-everycred_connector}
+      MYSQL_USER: ${LOCAL_DB_USER:-connector}
+      MYSQL_PASSWORD: ${LOCAL_DB_PASSWORD:?Set LOCAL_DB_PASSWORD in .env}
+      # Nothing needs root; the app and Adminer use MYSQL_USER.
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # The init phase runs MySQL without networking, so a TCP ping only
+      # succeeds once the real server is up and the user exists.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 20
+    restart: unless-stopped
+
+  adminer:
+    image: adminer:4.8.1
+    container_name: everycred-connector-adminer
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    # Lets Adminer also open a MySQL installed on the host, as server
+    # host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  migrate:
+    environment: *local-database
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  api:
+    environment:
+      <<: *local-database
+      # No nginx locally, so no path prefix: docs at /docs.
+      ROOT_PATH: ""
+
+  worker:
+    environment: *local-database
+
+volumes:
+  mysql-data:

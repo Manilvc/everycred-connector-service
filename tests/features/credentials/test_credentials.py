@@ -1,3 +1,5 @@
+import json
+
 import httpx
 from httpx import AsyncClient
 
@@ -45,7 +47,8 @@ async def test_verifier_gets_normalized_credential_from_its_source(
     assert body["title"] == "B.Tech"
     assert body["issuer"]["email"] is None
     assert body["qr_code_url"] is None
-    assert body["credential_json"] == {"type": ["VerifiableCredential"]}
+    assert body["credential_json"]["type"] == ["VerifiableCredential"]
+    assert body["valid_until"] == "2030-10-01T00:00:00Z"
     source_request = fake_sources.requests[0]
     assert source_request.url.path == "/v1/user/credential/cred-1"
     assert source_request.headers["X-API-Key"] == "dcs-india-source-api-key"
@@ -118,6 +121,8 @@ async def test_holder_lookup_collects_from_every_source(
     assert response.status_code == 200
     assert set(items) == {"cred-india", "cred-edu"}
     assert items["cred-india"]["credential"]["title"] == "B.Tech"
+    assert items["cred-india"]["first_seen_at"]
+    assert items["cred-india"]["status_changed_at"]
     assert items["cred-edu"]["credential"] is None
     assert items["cred-edu"]["error"]
 
@@ -167,3 +172,54 @@ async def test_holder_gets_own_credential(
 
     assert response.status_code == 200
     assert response.json()["status"] == "revoked"
+
+
+async def test_verification_record_is_forwarded_to_the_source(
+    client: AsyncClient, fake_sources: FakeSources
+) -> None:
+    secret = await register_source(client)
+    await _issue(client, secret, "unique-1")
+    headers = await register_client(client, "holder_service")
+    fake_sources.handle(
+        "dcs-india.example.com",
+        lambda request: httpx.Response(
+            201,
+            json={
+                "status": "success",
+                "data": {"id": 7},
+                "message": "Information stored successfully",
+            },
+        ),
+    )
+
+    response = await client.post(
+        "/v1/credentials/unique-1/verification-analytics",
+        json={"verification_status": True, "stage": None, "reason": None},
+        headers=headers,
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["status_code"] == 201
+    assert body["ok"] is True
+    assert body["data"] == {"id": 7}
+    assert body["message"] == "Information stored successfully"
+    source_request = fake_sources.requests[0]
+    assert source_request.method == "POST"
+    assert source_request.url.path == "/v1/credential/verification/analytics"
+    assert source_request.url.params["uuid"] == "unique-1"
+    assert json.loads(source_request.content)["verification_status"] is True
+
+
+async def test_verification_record_for_unknown_credential_is_404(
+    client: AsyncClient,
+) -> None:
+    headers = await register_client(client, "verifier")
+
+    response = await client.post(
+        "/v1/credentials/unknown/verification-analytics",
+        json={"verification_status": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 404

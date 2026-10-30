@@ -64,6 +64,15 @@ _OPERATIONS = (
     HolderOperation(
         "requests.get", "GET", "/requests/{request_id}", ("request_id",)
     ),
+    # Same call as requests.get, sent to every linked source: the wallet's
+    # DCS-shaped routes name a request by id only, without its source.
+    HolderOperation(
+        "requests.find",
+        "GET",
+        "/requests/{request_id}",
+        ("request_id",),
+        is_fan_out=True,
+    ),
     HolderOperation(
         "requests.fields",
         "GET",
@@ -157,6 +166,21 @@ _OPERATIONS = (
         "GET",
         "/digilocker/complete-flow/{client_id}",
         ("client_id",),
+    ),
+    # Sent by the holder service once the holder has an account, so each
+    # DCS can mark its invite accepted; one source when named, else all.
+    HolderOperation(
+        "holder.registered", "PUT", "/registered", is_fan_out=True
+    ),
+    # Sent by the holder service when the holder's name or contact
+    # number changes (and at sign-up), so issuer portals show the
+    # holder's own details; one source when named, else all.
+    HolderOperation(
+        "holder.profile_updated",
+        "PUT",
+        "/profile",
+        has_body=True,
+        is_fan_out=True,
     ),
     HolderOperation(
         "credentials.stats",

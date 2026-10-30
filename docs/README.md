@@ -1,6 +1,6 @@
 # everycred-connector-service — architecture
 
-> Last updated: 2026-10-21
+> Last updated: 2026-10-28
 
 The connector sits between EveryCRED DCS instances (one per region or
 sector, such as DCS-India and DCS-Education) and the applications that
@@ -54,6 +54,11 @@ flowchart LR
 4. **Holder operations.** Request lists, submissions, workflow steps,
    KYC and DigiLocker calls go through `POST /v1/holders/operations`,
    which forwards a named operation to the right DCS.
+5. **Holder onboarding.** An issuer invite in a DCS posts
+   `holder.invited`; the connector links the holder and forwards it.
+   When the holder signs up, the holder service runs the
+   `holder.registered` operation on every linked DCS, which marks the
+   holder registered and the invite accepted.
 
 ## Features
 
@@ -70,7 +75,9 @@ flowchart LR
 | `normalizers` | Source formats | [normalizers](features/normalizers.md) |
 
 Core modules are documented in [`docs/core/`](core/). What a DCS must
-implement is in [`dcs_contract.md`](dcs_contract.md).
+implement is in [`dcs_contract.md`](dcs_contract.md). Running one
+connector for DCS instances in several regions is described in
+[`multi_region_deployment.md`](multi_region_deployment.md).
 
 ## Adding code
 

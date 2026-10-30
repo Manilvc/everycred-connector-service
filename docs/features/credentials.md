@@ -18,6 +18,7 @@ is stored.
 | GET | `/v1/credentials/{credential_id}` | Get a credential by id | Any active client (`X-API-Key`) |
 | POST | `/v1/holders/credentials/lookup` | List a holder's credentials | Holder service (`X-API-Key`) |
 | POST | `/v1/holders/credentials/get` | Get one of a holder's credentials | Holder service (`X-API-Key`) |
+| POST | `/v1/credentials/{credential_id}/verification-analytics` | Record a verification of a credential | Any active client (`X-API-Key`) |
 
 `credential_id` must match `^[A-Za-z0-9._:-]{1,128}$`.
 
@@ -136,6 +137,40 @@ in access logs.
 
 Errors on the holder routes use the same envelope as the rest of the
 service (see [exceptions](../core/exceptions.md)).
+
+### `POST /v1/credentials/{credential_id}/verification-analytics`
+
+Forwards a verification record to the source that issued the credential,
+at the path its format declares (`everycred_dcs`:
+`/v1/credential/verification/analytics?uuid={credential_id}`). The body
+(`verification_status`, `stage`, `reason`, up to 16 KiB) is passed
+through unchanged. The answer is always `200` with the source's own
+result, so callers can reproduce the DCS response:
+
+```json
+{
+  "source_code": "dcs-india",
+  "status_code": 201,
+  "ok": true,
+  "data": {"id": 7, "last_verified": "2026-10-21T10:00:00"},
+  "message": "Information stored successfully"
+}
+```
+
+Errors: `404 credential_not_found` (no route), `400
+analytics_not_supported` (the source format has no analytics path),
+`400 invalid_params` (body too large), `502 source_unavailable`.
+
+### Fields used by wallets
+
+Besides the fields above, `NormalizedCredential` carries
+`credential_unique_id`, `subject_name`, `subject_logo_url`, `valid_from`,
+`valid_until` (read from the credential document, VC 2.0 names first),
+and `credential_json_content`, the document exactly as the source sent
+it. Proof checks must use that string rather than re-serialising
+`credential_json`. Holder lookup items also carry `first_seen_at` and
+`status_changed_at` from the routing table, which the holder service
+uses for credential dates and revocation notifications.
 
 ## Flow
 

@@ -30,7 +30,12 @@ _PREFIX_BYTES = 6
 _SECRET_BYTES = 32
 PREFIX_LENGTH = _PREFIX_BYTES * 2
 
-_admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
+# Every APIKeyHeader defaults to the scheme name "APIKeyHeader", so the
+# admin and client schemes would overwrite each other in the OpenAPI
+# schema and Swagger would send the admin key as X-API-Key.
+_admin_key_header = APIKeyHeader(
+    name="X-Admin-Key", scheme_name="AdminKey", auto_error=False
+)
 
 
 @dataclass(frozen=True, slots=True)

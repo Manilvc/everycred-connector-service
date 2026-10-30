@@ -15,6 +15,7 @@ class EventType(StrEnum):
     CREDENTIAL_REVOKED = "credential.revoked"
     REQUEST_CREATED = "request.created"
     REQUEST_UPDATED = "request.updated"
+    HOLDER_INVITED = "holder.invited"
 
     @property
     def is_credential_event(self) -> bool:
@@ -23,6 +24,11 @@ class EventType(StrEnum):
             EventType.CREDENTIAL_ISSUED,
             EventType.CREDENTIAL_REVOKED,
         )
+
+    @property
+    def is_request_event(self) -> bool:
+        """Return True for events about a credential request."""
+        return self in (EventType.REQUEST_CREATED, EventType.REQUEST_UPDATED)
 
 
 class SourceEventData(BaseModel):
@@ -34,6 +40,11 @@ class SourceEventData(BaseModel):
     request_id: Identifier | None = None
     holder_email: HolderEmail | None = None
     status: str | None = Field(default=None, max_length=50)
+    inviter_name: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Organisation that invited the holder (holder.invited).",
+    )
 
 
 class SourceEventPayload(BaseModel):
@@ -51,8 +62,13 @@ class SourceEventPayload(BaseModel):
         """Require the id that each event type is about."""
         if self.event.is_credential_event and not self.data.credential_id:
             raise ValueError("credential events need data.credential_id")
-        if not self.event.is_credential_event and not self.data.request_id:
+        if self.event.is_request_event and not self.data.request_id:
             raise ValueError("request events need data.request_id")
+        if (
+            self.event == EventType.HOLDER_INVITED
+            and not self.data.holder_email
+        ):
+            raise ValueError("holder.invited needs data.holder_email")
         return self
 
 

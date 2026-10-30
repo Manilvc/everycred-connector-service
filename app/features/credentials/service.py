@@ -7,19 +7,24 @@ by the source's normalizer. Nothing fetched is stored.
 """
 
 import asyncio
+import json
 import logging
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.exceptions import AppError
 from app.features.credentials.exceptions import (
+    AnalyticsBodyTooLargeError,
+    AnalyticsNotSupportedError,
     CredentialNotFoundError,
     InvalidSourceResponseError,
 )
 from app.features.credentials.schemas import (
     HolderCredentialItem,
     HolderCredentialList,
+    SourceAnswer,
 )
 from app.features.routing.holder_keys import holder_key
 from app.features.routing.models import CredentialRoute
@@ -36,6 +41,10 @@ from app.normalizers.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Verification records carry a status, stage, and reason; anything near
+# this size is not one.
+MAX_ANALYTICS_BODY_BYTES = 16 * 1024
 
 # Upper bound on credentials fetched for one holder lookup, so a single
 # request cannot fan out into thousands of source calls.
@@ -126,6 +135,8 @@ class CredentialService:
                 source_code=source.code,
                 credential_id=route.credential_id,
                 status=CredentialStatus(route.status),
+                first_seen_at=route.created_at,
+                status_changed_at=route.last_event_at,
             )
             async with limiter:
                 try:
@@ -138,6 +149,50 @@ class CredentialService:
 
         items = await asyncio.gather(*(fetch_item(r) for r in routes))
         return HolderCredentialList(items=list(items))
+
+    async def record_verification(
+        self, credential_id: str, record: dict[str, Any]
+    ) -> SourceAnswer:
+        """Forward a verification record to the credential's source.
+
+        The source's answer is returned as is, whatever its status, so
+        the caller can pass it on unchanged.
+
+        Raises:
+            CredentialNotFoundError: No route exists for the credential.
+            AnalyticsNotSupportedError: The source's format has no
+                verification endpoint.
+            AnalyticsBodyTooLargeError: The record is too large.
+            SourceUnavailableError: The source failed or is unreachable.
+        """
+        if len(json.dumps(record)) > MAX_ANALYTICS_BODY_BYTES:
+            raise AnalyticsBodyTooLargeError("The record is too large.")
+        route = await self.routing.get_route(credential_id)
+        if route is None:
+            raise CredentialNotFoundError(
+                f"Credential {credential_id} is not known to the connector."
+            )
+        source = await self._get_route_source(route)
+        path = get_source_format(
+            source.normalizer
+        ).build_verification_analytics_path(credential_id)
+        if path is None:
+            raise AnalyticsNotSupportedError(
+                f"Source {source.code} does not record verifications."
+            )
+        response = await self.caller.call(
+            source, "POST", path, json_body=record
+        )
+        body = response.body
+        is_envelope = isinstance(body, dict) and "data" in body
+        message = body.get("message") if is_envelope else None
+        return SourceAnswer(
+            source_code=source.code,
+            status_code=response.status_code,
+            ok=response.is_success,
+            data=body["data"] if is_envelope else body,
+            message=message if isinstance(message, str) else None,
+        )
 
     async def _get_route_source(self, route: CredentialRoute) -> Source:
         sources = await self.sources.list_by_ids({route.source_id})

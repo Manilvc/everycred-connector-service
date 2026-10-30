@@ -30,6 +30,15 @@ DCS-Education) to verifier applications and the holder service.
   `X-EveryCRED-Signature: t=<unix time>,v1=<hex HMAC-SHA256 of
   "<t>.<raw body>">`.
 
+In Swagger, click **Authorize** and fill the scheme the route needs:
+
+- `AdminKey` (`X-Admin-Key`): the `ADMIN_API_KEY` from the server
+  environment. Needed for Sources and Clients.
+- `ClientKey` (`X-API-Key`): a key returned by `POST /v1/clients`.
+  Needed for Credentials and Holder Operations.
+
+A missing or wrong key returns `401 authentication_failed`.
+
 ## Errors
 
 Every error response has the shape

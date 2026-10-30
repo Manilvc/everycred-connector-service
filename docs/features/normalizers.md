@@ -128,6 +128,14 @@ None. The name of each source's format is stored per source
 | Name not registered when reading | `KeyError` from `get_source_format`, unhandled, 500 | `ERROR` with traceback |
 | Name registered twice | `ValueError` at import time, app does not start | Traceback |
 
+## Verification analytics path
+
+`register_normalizer` takes an optional `verification_analytics_path`
+template with a `{credential_id}` placeholder. When set, the connector
+forwards verification records for the format's credentials there (see
+[credentials.md](credentials.md)). Ids are URL-encoded into both
+templates by `SourceFormat`.
+
 ## Adding a source format
 
 1. **Write the function** in a new module, for example

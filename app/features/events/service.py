@@ -5,6 +5,10 @@ For each verified delivery the service, in one transaction:
 1. records the delivery id, so a retried delivery is applied once;
 2. updates the routing table (credential -> source, holder -> source);
 3. queues a notification for the holder service.
+
+``holder.invited`` routes no credential: it only links the holder to the
+source, so the holder service can show the invite and later report the
+holder's registration back to that source.
 """
 
 import logging
@@ -180,5 +184,6 @@ class EventService:
                 "credential_id": data.credential_id,
                 "request_id": data.request_id,
                 "status": data.status,
+                "inviter_name": data.inviter_name,
             },
         )

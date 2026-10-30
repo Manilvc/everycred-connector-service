@@ -1,6 +1,6 @@
 # DCS contract
 
-> Last updated: 2026-10-21
+> Last updated: 2026-10-28
 
 What every DCS instance (EveryCRED backend deployment) must provide for
 the connector to route to it. Items 1 and 3 do **not exist in the DCS
@@ -54,11 +54,21 @@ Body:
 | `credential.revoked` | `credential_id`     | Mark the route revoked                     |
 | `request.created`    | `request_id`        | Link the holder to this source             |
 | `request.updated`    | `request_id`        | Link the holder to this source             |
+| `holder.invited`     | `holder_email`      | Link the holder to this source; the holder service shows the invite |
+
+`holder.invited` is sent when an issuer invites a holder by email. Its
+`data` carries `holder_email` and an optional `inviter_name` (the
+inviting organisation, up to 200 characters) and no ids.
 
 `holder_email` is optional but needed for the holder to see the
-credential or request in the wallet. `credential_id` is the credential's
-`uuid` (the id `GET /v1/user/credential/{uuid}` accepts). Identifiers
-must match `^[A-Za-z0-9._:-]{1,128}$`.
+credential or request in the wallet. `credential_id` must be the
+credential's **`credential_unique_id`**: the id the public view
+`GET /v1/user/credential/{uuid}` matches on
+(`VerifierMethod.get_credential_by_uuid` filters on
+`credential_unique_id`, despite the parameter name), and the id wallets
+and verifiers hold. A re-issued credential keeps its
+`credential_unique_id`, so it keeps its route. Identifiers must match
+`^[A-Za-z0-9._:-]{1,128}$`.
 
 Answers: `202` (applied, or `"duplicate": true` for a repeated delivery
 id), `401 invalid_signature`, `404 source_not_found`,
@@ -73,6 +83,11 @@ re-issue in `tasks/reissue_credential.py`) and the request notifiers
 inside the request transaction.
 
 ## 2. Credential view (connector → DCS)
+
+The connector also forwards verification records to the existing public
+`POST {base_url}/v1/credential/verification/analytics?uuid={credential_id}`
+(see `POST /v1/credentials/{credential_id}/verification-analytics`). No
+change is needed for that either.
 
 The `everycred_dcs` normalizer fetches
 `GET {base_url}/v1/user/credential/{credential_id}` and maps the
@@ -103,6 +118,7 @@ connector passes `data` and `message` through with the HTTP status.
 |---|---|---|---|
 | `requests.list`        | GET  | `/requests` | `GET /v1/holder/subject/requests` |
 | `requests.get`         | GET  | `/requests/{request_id}` | `GET /v1/holder/request/{request_id}` |
+| `requests.find`        | GET  | `/requests/{request_id}` (every linked source) | same; used when the wallet sends no source |
 | `requests.fields`      | GET  | `/requests/{request_id}/fields` | `GET /v1/wallet/holder/subject/request/fields` |
 | `requests.submit`      | POST | `/requests/{request_id}/submission` | `POST /v1/holder/request/submission` |
 | `requests.decline`     | POST | `/requests/{request_id}/decline` | `POST /v1/wallet/holder/subject/request/defuse` |
@@ -120,6 +136,19 @@ connector passes `data` and `message` through with the HTTP status.
 | `digilocker.initialize`| POST | `/digilocker/initialize` | `POST /v1/sure-pass/digilocker/initialize` |
 | `digilocker.complete`  | GET  | `/digilocker/complete-flow/{client_id}` | `GET /v1/sure-pass/complete-flow/{client_id}` |
 | `credentials.stats`    | GET  | `/credentials/{credential_id}/stats` | `GET /v1/holder/stats` |
+| `holder.registered`    | PUT  | `/registered` (one source, or every linked source) | none; the holder signed up in the holder service |
+| `holder.profile_updated` | PUT | `/profile` (one source, or every linked source) | none; the holder changed their profile in the holder service |
+
+`holder.registered` carries no body. The DCS marks the holder from
+`X-Holder-Email` as registered and accepts that holder's open invites.
+It must be idempotent, and answer 404 for an email it has no holder
+for; the holder service treats that as nothing to update.
+
+`holder.profile_updated` carries the holder's current profile,
+`{"name": "<full name>", "mobile": "<number or null>"}`. The DCS stores
+it on the holder from `X-Holder-Email`, so issuer screens show the
+holder's own details. The same rules apply: idempotent, and 404 for an
+unknown email.
 
 Path parameters are URL-encoded by the connector and limited to
 `^[A-Za-z0-9._:-]{1,128}$`. Bodies are the JSON the wallet sends today,

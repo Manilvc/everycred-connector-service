@@ -1,7 +1,7 @@
 # Notifications
 
 > Package: `app/features/notifications/`, worker: `app/worker.py`
-> Last updated: 2026-10-21
+> Last updated: 2026-10-28
 
 ## Overview
 
@@ -62,10 +62,13 @@ sequenceDiagram
     "holder_email": "holder@example.com",
     "credential_id": "00000000-0000-0000-0000-000000000000",
     "request_id": null,
-    "status": "issued"
+    "status": "issued",
+    "inviter_name": null
   }
 }
 ```
+
+`inviter_name` is set only for `holder.invited`.
 
 The payload is JSON encrypted with `encrypt_text` and stored in
 `encrypted_payload`. Enqueue does not commit. The event service commits.

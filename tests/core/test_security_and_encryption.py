@@ -1,5 +1,6 @@
 import pytest
 from cryptography.fernet import Fernet
+from httpx import AsyncClient
 
 from app.core.config import get_settings
 from app.core.encryption import DecryptionError, decrypt_text, encrypt_text
@@ -44,3 +45,18 @@ def test_generated_api_key_verifies_against_its_hash() -> None:
 )
 def test_malformed_api_keys_have_no_prefix(api_key: str) -> None:
     assert extract_api_key_prefix(api_key) is None
+
+
+async def test_openapi_documents_admin_and_client_keys_separately(
+    client: AsyncClient,
+) -> None:
+    response = await client.get("/openapi.json")
+
+    schema = response.json()
+    assert schema["components"]["securitySchemes"] == {
+        "AdminKey": {"type": "apiKey", "in": "header", "name": "X-Admin-Key"},
+        "ClientKey": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+    }
+    assert schema["paths"]["/v1/clients"]["post"]["security"] == [
+        {"AdminKey": []}
+    ]

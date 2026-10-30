@@ -15,7 +15,9 @@ from app.core.exceptions import PermissionDeniedError
 from app.features.clients.models import Client, ClientKind
 from app.features.clients.service import ClientService
 
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_api_key_header = APIKeyHeader(
+    name="X-API-Key", scheme_name="ClientKey", auto_error=False
+)
 
 
 def get_client_service(

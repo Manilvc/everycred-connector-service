@@ -173,6 +173,50 @@ async def test_request_event_links_holder_without_a_route(
         assert await session.scalar(select(HolderLink)) is not None
 
 
+async def test_holder_invited_links_holder_and_forwards_inviter(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    secret = await register_source(client)
+
+    response = await send_event(
+        client,
+        "dcs-india",
+        secret,
+        build_event("holder.invited", inviter_name="Example University"),
+    )
+
+    assert response.status_code == 202
+    async with session_factory() as session:
+        assert await session.scalar(select(CredentialRoute)) is None
+        assert await session.scalar(select(HolderLink)) is not None
+        notification = await session.scalar(select(HolderNotification))
+    assert notification is not None
+    assert notification.encrypted_payload is not None
+    forwarded = json.loads(
+        decrypt_text(notification.encrypted_payload, get_settings())
+    )
+    assert forwarded["event"] == "holder.invited"
+    assert forwarded["data"]["inviter_name"] == "Example University"
+    assert forwarded["data"]["holder_email"] == "holder@example.com"
+
+
+async def test_holder_invited_without_holder_email_is_invalid(
+    client: AsyncClient,
+) -> None:
+    secret = await register_source(client)
+
+    response = await send_event(
+        client,
+        "dcs-india",
+        secret,
+        build_event("holder.invited", holder_email=None),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_event"
+
+
 async def test_unknown_source_is_not_found(client: AsyncClient) -> None:
     response = await send_event(
         client,

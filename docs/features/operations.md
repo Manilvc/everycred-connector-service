@@ -1,7 +1,7 @@
 # Operations
 
 > Package: `app/features/operations/`
-> Last updated: 2026-10-21
+> Last updated: 2026-10-28
 
 ## Overview
 
@@ -90,6 +90,7 @@ Defined in `app/features/operations/catalog.py`. Paths are relative to
 |---|---|---|---|---|---|
 | `requests.list` | GET | `/requests` | none | no | yes |
 | `requests.get` | GET | `/requests/{request_id}` | `request_id` | no | no |
+| `requests.find` | GET | `/requests/{request_id}` | `request_id` | no | yes |
 | `requests.fields` | GET | `/requests/{request_id}/fields` | `request_id` | no | no |
 | `requests.submit` | POST | `/requests/{request_id}/submission` | `request_id` | yes | no |
 | `requests.decline` | POST | `/requests/{request_id}/decline` | `request_id` | yes | no |
@@ -107,6 +108,16 @@ Defined in `app/features/operations/catalog.py`. Paths are relative to
 | `digilocker.initialize` | POST | `/digilocker/initialize` | none | yes | no |
 | `digilocker.complete` | GET | `/digilocker/complete-flow/{client_id}` | `client_id` | no | no |
 | `credentials.stats` | GET | `/credentials/{credential_id}/stats` | `credential_id` | no | no |
+| `holder.registered` | PUT | `/registered` | none | no | yes |
+| `holder.profile_updated` | PUT | `/profile` | none | yes | yes |
+
+`holder.registered` is sent by the holder service's worker after a
+holder signs up (no `source_code`: every linked source) or after an
+invite arrives for an existing account (that invite's source).
+
+`holder.profile_updated` is sent by the same worker when the holder
+signs up or changes their name or contact number. Its body is the
+holder's current `{"name", "mobile"}`.
 
 A fan-out operation may still name a `source_code`. Only item
 operations must have one.

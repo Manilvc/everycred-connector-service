@@ -1,8 +1,8 @@
 """Credential lookups for verifier applications and the holder service."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, status
+from fastapi import APIRouter, Body, Path, status
 
 from app.features.clients.dependencies import (
     CurrentClient,
@@ -13,6 +13,7 @@ from app.features.credentials.schemas import (
     HolderCredentialGet,
     HolderCredentialList,
     HolderCredentialsLookup,
+    SourceAnswer,
 )
 from app.normalizers.base import NormalizedCredential
 from app.shared.identifiers import IDENTIFIER_PATTERN
@@ -82,3 +83,24 @@ async def get_holder_credential(
     return await service.get_holder_credential(
         payload.holder_email, payload.credential_id
     )
+
+
+@router.post(
+    "/credentials/{credential_id}/verification-analytics",
+    response_model=SourceAnswer,
+    summary="Record a verification of a credential",
+    responses=_LOOKUP_ERRORS,
+)
+async def record_verification(
+    credential_id: Annotated[str, Path(pattern=IDENTIFIER_PATTERN)],
+    record: Annotated[dict[str, Any], Body()],
+    service: CredentialServiceDep,
+    client: CurrentClient,
+) -> SourceAnswer:
+    """Forward a verification record to the credential's DCS source.
+
+    The record (``verification_status``, ``stage``, ``reason``) is passed
+    through unchanged, and the source's answer is returned with its own
+    status code, so wallets keep the DCS behaviour.
+    """
+    return await service.record_verification(credential_id, record)

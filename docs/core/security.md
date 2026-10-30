@@ -143,6 +143,10 @@ scheme in use, but it is harmless.
 ## Changing this module
 
 - Use `hmac.compare_digest` for every secret comparison.
+- Give every `APIKeyHeader` its own `scheme_name` (`AdminKey`,
+  `ClientKey`). Without one, they all default to `APIKeyHeader`,
+  overwrite each other in the OpenAPI schema, and Swagger's
+  **Authorize** dialog sends the key under the wrong header.
 - Use `secrets` for anything random. Do not use `random`.
 - Do not add a key lookup by full key. The prefix is the only indexed
   lookup.

@@ -55,10 +55,60 @@ uv run ruff check . && uv run ruff format --check .
 
 ## Docker
 
+### Local, with its own MySQL and Adminer
+
+`docker-compose.local.yml` adds a MySQL 8.4 container and Adminer, and
+points the app containers at that MySQL. The `DATABASE_URL` in `.env`
+cannot be used by containers as-is: inside a container `127.0.0.1` is
+the container, not your machine.
+
+1. Set `LOCAL_DB_PASSWORD` in `.env` (hex only, see `.env.example`):
+
+   ```bash
+   python -c "import secrets; print(secrets.token_hex(24))"
+   ```
+
+2. Start the stack (migrations run first):
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+   ```
+
+3. Open:
+
+   | What | Where |
+   |---|---|
+   | API docs | http://127.0.0.1:8050/docs |
+   | Adminer | http://127.0.0.1:8081: System `MySQL`, Server `mysql`, Username `connector`, Password `LOCAL_DB_PASSWORD`, Database `everycred_connector` |
+   | MySQL from the host | `127.0.0.1:3307` (3306 is left free for a MySQL installed on the host) |
+
+4. Logs, stop, and reset:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f api worker
+   docker compose -f docker-compose.yml -f docker-compose.local.yml down      # keeps data
+   docker compose -f docker-compose.yml -f docker-compose.local.yml down -v   # deletes the local database
+   ```
+
+`uv run` on the host keeps using `DATABASE_URL` from `.env`. To point
+it at the container database, use `127.0.0.1:3307` with the `connector`
+user.
+
+### Server, with an existing MySQL
+
 ```bash
 docker compose build
 docker compose up -d     # migrate, then api (127.0.0.1:8050) and worker
 ```
+
+`DATABASE_URL` must reach MySQL from inside the containers. For a MySQL
+on the same host, prefer its Unix socket: add
+`COMPOSE_FILE=docker-compose.yml:docker-compose.mysql-socket.yml` to
+`.env` and follow the comments in `docker-compose.mysql-socket.yml`.
+Otherwise use `host.docker.internal`, with a user allowed from the
+Docker network (`'<user>'@'172.%'`) and MySQL listening beyond
+`127.0.0.1`. If the migrate container fails, `docker logs
+everycred-connector-migrate` explains the cause and the fix.
 
 ## Configuration
 

@@ -21,6 +21,7 @@ def build_event(
     credential_id: str | None = None,
     request_id: str | None = None,
     holder_email: str | None = "holder@example.com",
+    inviter_name: str | None = None,
 ) -> dict[str, Any]:
     return {
         "id": uuid.uuid4().hex,
@@ -30,6 +31,7 @@ def build_event(
             "credential_id": credential_id,
             "request_id": request_id,
             "holder_email": holder_email,
+            "inviter_name": inviter_name,
         },
     }
 
@@ -79,6 +81,13 @@ def dcs_credential_body(
             "qrcode": "",
             "hash": "abc123",
             "is_revoked": is_revoked,
-            "credential_json_content": '{"type": ["VerifiableCredential"]}',
+            "credential_json_content": (
+                '{"type": ["VerifiableCredential"], '
+                '"validFrom": "2026-10-01T00:00:00Z", '
+                '"validUntil": "2030-10-01T00:00:00Z"}'
+            ),
+            "credential_unique_id": "unique-1",
+            "subject_name": "Computer Science",
+            "subject_logo_link": "https://cdn.example.com/subject.png",
         },
     }

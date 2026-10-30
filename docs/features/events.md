@@ -1,7 +1,7 @@
 # Events
 
 > Package: `app/features/events/`
-> Last updated: 2026-10-21
+> Last updated: 2026-10-28
 
 ## Overview
 
@@ -57,6 +57,7 @@ Body:
 | `credential.revoked` | `credential_id` | Updates the route with status `revoked` |
 | `request.created` | `request_id` | Links the holder to the source |
 | `request.updated` | `request_id` | Links the holder to the source |
+| `holder.invited` | `holder_email` | Links the holder to the source; forwards `inviter_name` |
 
 `holder_email` is optional. When present, it is normalised (trimmed,
 lower-cased), hashed, and used to link the holder. It is also forwarded to
@@ -156,6 +157,8 @@ Step detail:
    with the message about the header.
 5. The body is parsed by `SourceEventPayload`. Credential events must have
    `data.credential_id`. Request events must have `data.request_id`.
+   `holder.invited` must have `data.holder_email`; `data.inviter_name` is
+   optional, up to 200 characters.
 6. `EventService.receive` checks `SourceEventRepository.exists`. A repeat
    returns `duplicate=true` without changing anything.
 7. For a new delivery, `_apply` runs:

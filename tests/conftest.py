@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 # Settings are read when app.main is imported, so the environment must
 # be prepared first. Values are assigned (not defaulted) so a developer's
@@ -25,6 +26,7 @@ import pytest  # noqa: E402
 from asgi_lifespan import LifespanManager  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import event  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
@@ -69,11 +71,23 @@ class FakeSources:
         return handler(request)
 
 
+def _enforce_foreign_keys(
+    dbapi_connection: Any, connection_record: Any
+) -> None:
+    # SQLite ignores foreign keys unless asked. MySQL always enforces
+    # them, so tests must too, or rows inserted in the wrong order pass
+    # here and fail in production.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 @pytest.fixture
 async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     # StaticPool keeps one connection open, so every session sees the
     # same in-memory database for the duration of the test.
     engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+    event.listen(engine.sync_engine, "connect", _enforce_foreign_keys)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(engine, expire_on_commit=False)

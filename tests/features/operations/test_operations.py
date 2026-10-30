@@ -99,6 +99,95 @@ async def test_list_operation_fans_out_to_linked_sources(
     assert items["dcs-edu"]["status_code"] == 502
 
 
+async def test_find_operation_looks_up_a_request_in_every_source(
+    client: AsyncClient,
+    fake_sources: FakeSources,
+    holder_headers: dict[str, str],
+) -> None:
+    await _link_holder(client, "dcs-india", "holder@example.com")
+    await _link_holder(client, "dcs-edu", "holder@example.com")
+    fake_sources.handle("dcs-india.example.com", _dcs_ok)
+    fake_sources.handle("dcs-edu.example.com", _dcs_ok)
+
+    response = await client.post(
+        "/v1/holders/operations",
+        json={
+            "holder_email": "holder@example.com",
+            "operation": "requests.find",
+            "params": {"request_id": "req-1"},
+        },
+        headers=holder_headers,
+    )
+
+    assert response.status_code == 200
+    paths = {item["data"]["path"] for item in response.json()["items"]}
+    assert paths == {"/v1/internal/holder/requests/req-1"}
+    assert len(fake_sources.requests) == 2
+
+
+async def test_registered_operation_puts_to_every_linked_source(
+    client: AsyncClient,
+    fake_sources: FakeSources,
+    holder_headers: dict[str, str],
+) -> None:
+    await _link_holder(client, "dcs-india", "holder@example.com")
+    await _link_holder(client, "dcs-edu", "holder@example.com")
+    fake_sources.handle("dcs-india.example.com", _dcs_ok)
+    fake_sources.handle("dcs-edu.example.com", _dcs_ok)
+
+    response = await client.post(
+        "/v1/holders/operations",
+        json={
+            "holder_email": "holder@example.com",
+            "operation": "holder.registered",
+        },
+        headers=holder_headers,
+    )
+
+    assert response.status_code == 200
+    assert {item["source_code"] for item in response.json()["items"]} == {
+        "dcs-india",
+        "dcs-edu",
+    }
+    assert {request.method for request in fake_sources.requests} == {"PUT"}
+    assert {request.url.path for request in fake_sources.requests} == {
+        "/v1/internal/holder/registered"
+    }
+
+
+async def test_profile_operation_puts_the_body_to_every_linked_source(
+    client: AsyncClient,
+    fake_sources: FakeSources,
+    holder_headers: dict[str, str],
+) -> None:
+    await _link_holder(client, "dcs-india", "holder@example.com")
+    await _link_holder(client, "dcs-edu", "holder@example.com")
+    fake_sources.handle("dcs-india.example.com", _dcs_ok)
+    fake_sources.handle("dcs-edu.example.com", _dcs_ok)
+    profile = {"name": "Asha Rao", "mobile": "+919876543210"}
+
+    response = await client.post(
+        "/v1/holders/operations",
+        json={
+            "holder_email": "holder@example.com",
+            "operation": "holder.profile_updated",
+            "body": profile,
+        },
+        headers=holder_headers,
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 2
+    assert {request.method for request in fake_sources.requests} == {"PUT"}
+    assert {request.url.path for request in fake_sources.requests} == {
+        "/v1/internal/holder/profile"
+    }
+    assert all(
+        json.loads(request.content) == profile
+        for request in fake_sources.requests
+    )
+
+
 @pytest.mark.parametrize(
     ("payload", "error_code"),
     [
