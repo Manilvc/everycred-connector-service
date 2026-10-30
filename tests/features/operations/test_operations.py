@@ -4,7 +4,12 @@ import httpx
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import FakeSources, register_client, register_source
+from tests.conftest import (
+    ADMIN_HEADERS,
+    FakeSources,
+    register_client,
+    register_source,
+)
 from tests.helpers import build_event, send_event
 
 
@@ -70,6 +75,37 @@ async def test_item_operation_calls_the_named_source(
     assert source_request.method == "POST"
     assert source_request.headers["X-Holder-Email"] == "holder@example.com"
     assert json.loads(source_request.content) == {"answers": {"name": "Test"}}
+    assert "Origin" not in source_request.headers
+
+
+async def test_tenant_source_call_carries_the_tenant_origin(
+    client: AsyncClient,
+    fake_sources: FakeSources,
+    holder_headers: dict[str, str],
+) -> None:
+    await _link_holder(client, "dcs-india", "holder@example.com")
+    await client.patch(
+        "/v1/sources/dcs-india",
+        json={"tenant_origin": "https://tenant-a.example.com"},
+        headers=ADMIN_HEADERS,
+    )
+    fake_sources.handle("dcs-india.example.com", _dcs_ok)
+
+    response = await client.post(
+        "/v1/holders/operations",
+        json={
+            "holder_email": "holder@example.com",
+            "operation": "workflow.node_submit",
+            "source_code": "dcs-india",
+            "params": {"request_uuid": "r-1", "node_key": "kyc:step"},
+            "body": {"answers": {}},
+        },
+        headers=holder_headers,
+    )
+
+    assert response.status_code == 200
+    source_request = fake_sources.requests[0]
+    assert source_request.headers["Origin"] == "https://tenant-a.example.com"
 
 
 async def test_list_operation_fans_out_to_linked_sources(

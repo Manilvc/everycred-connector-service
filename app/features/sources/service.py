@@ -18,6 +18,7 @@ from app.features.sources.schemas import (
     SourceCreate,
     SourceUpdate,
     normalise_base_url,
+    normalise_tenant_origin,
 )
 from app.normalizers.base import is_normalizer_known
 
@@ -72,6 +73,7 @@ class SourceService:
             code=payload.code,
             name=payload.name,
             base_url=normalise_base_url(payload.base_url),
+            tenant_origin=normalise_tenant_origin(payload.tenant_origin),
             normalizer=payload.normalizer,
             encrypted_api_key=encrypt_text(
                 payload.api_key.get_secret_value(), self.settings
@@ -116,6 +118,11 @@ class SourceService:
             source.name = payload.name
         if payload.base_url is not None:
             source.base_url = normalise_base_url(payload.base_url)
+        # Checked against the fields sent, so an explicit null clears it.
+        if "tenant_origin" in payload.model_fields_set:
+            source.tenant_origin = normalise_tenant_origin(
+                payload.tenant_origin
+            )
         if payload.api_key is not None:
             source.encrypted_api_key = encrypt_text(
                 payload.api_key.get_secret_value(), self.settings

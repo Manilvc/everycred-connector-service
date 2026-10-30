@@ -127,3 +127,57 @@ async def test_list_sources_is_paginated(client: AsyncClient) -> None:
     body = response.json()
     assert body["total"] == 2
     assert [item["code"] for item in body["items"]] == ["dcs-edu"]
+
+
+async def test_tenant_origin_is_stored_without_a_trailing_slash(
+    client: AsyncClient,
+) -> None:
+    await register_source(client)
+
+    response = await client.patch(
+        "/v1/sources/dcs-india",
+        json={"tenant_origin": "https://tenant-a.example.com/"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tenant_origin"] == "https://tenant-a.example.com"
+
+
+async def test_tenant_origin_with_a_path_is_rejected(
+    client: AsyncClient,
+) -> None:
+    await register_source(client)
+
+    response = await client.patch(
+        "/v1/sources/dcs-india",
+        json={"tenant_origin": "https://tenant-a.example.com/login"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
+async def test_update_keeps_tenant_origin_unless_sent(
+    client: AsyncClient,
+) -> None:
+    await register_source(client)
+    await client.patch(
+        "/v1/sources/dcs-india",
+        json={"tenant_origin": "https://tenant-a.example.com"},
+        headers=ADMIN_HEADERS,
+    )
+
+    kept = await client.patch(
+        "/v1/sources/dcs-india",
+        json={"name": "Renamed"},
+        headers=ADMIN_HEADERS,
+    )
+    cleared = await client.patch(
+        "/v1/sources/dcs-india",
+        json={"tenant_origin": None},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert kept.json()["tenant_origin"] == "https://tenant-a.example.com"
+    assert cleared.json()["tenant_origin"] is None
