@@ -302,3 +302,31 @@ async def test_source_without_holder_records_is_refused(
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "holder_not_linked"
     assert fake_sources.requests == []
+
+
+async def test_details_operation_calls_the_credential_details_path(
+    client: AsyncClient,
+    fake_sources: FakeSources,
+    holder_headers: dict[str, str],
+) -> None:
+    await _link_holder(client, "dcs-india", "holder@example.com")
+    fake_sources.handle("dcs-india.example.com", _dcs_ok)
+
+    response = await client.post(
+        "/v1/holders/operations",
+        json={
+            "holder_email": "holder@example.com",
+            "operation": "credentials.details",
+            "source_code": "dcs-india",
+            "params": {"credential_id": "cred-1"},
+        },
+        headers=holder_headers,
+    )
+
+    assert response.status_code == 200
+    [item] = response.json()["items"]
+    assert item["ok"] is True
+    assert item["data"]["path"] == (
+        "/v1/internal/holder/credentials/cred-1/details"
+    )
+    assert fake_sources.requests[0].method == "GET"

@@ -188,6 +188,14 @@ _OPERATIONS = (
         "/credentials/{credential_id}/stats",
         ("credential_id",),
     ),
+    # Data source and revocation trigger for the wallet's credential
+    # page; the DCS returns labels only, never the subject identifier.
+    HolderOperation(
+        "credentials.details",
+        "GET",
+        "/credentials/{credential_id}/details",
+        ("credential_id",),
+    ),
 )
 
 OPERATIONS_BY_NAME = {operation.name: operation for operation in _OPERATIONS}

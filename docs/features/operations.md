@@ -7,9 +7,9 @@
 
 Holder operations let the holder service act on a holder's data that
 lives in a DCS: listing and submitting requests, running workflow steps,
-KYC detail, integration steps, DigiLocker, and credential stats. The
-holder service names an operation from the catalog. It never sends a
-path. The connector picks the source, calls the DCS holder API, and
+KYC detail, integration steps, DigiLocker, credential stats, and
+credential details. The holder service names an operation from the
+catalog. It never sends a path. The connector picks the source, calls the DCS holder API, and
 passes the answer back without storing it.
 
 Only the holder service may call this feature.
@@ -108,6 +108,7 @@ Defined in `app/features/operations/catalog.py`. Paths are relative to
 | `digilocker.initialize` | POST | `/digilocker/initialize` | none | yes | no |
 | `digilocker.complete` | GET | `/digilocker/complete-flow/{client_id}` | `client_id` | no | no |
 | `credentials.stats` | GET | `/credentials/{credential_id}/stats` | `credential_id` | no | no |
+| `credentials.details` | GET | `/credentials/{credential_id}/details` | `credential_id` | no | no |
 | `holder.registered` | PUT | `/registered` | none | no | yes |
 | `holder.profile_updated` | PUT | `/profile` | none | yes | yes |
 
@@ -221,3 +222,4 @@ No tables. The holder's links come from `holder_links` (see
 - `test_invalid_operation_requests_are_rejected`
 - `test_path_traversal_in_params_is_rejected`
 - `test_source_without_holder_records_is_refused`
+- `test_details_operation_calls_the_credential_details_path`

@@ -143,8 +143,15 @@ connector passes `data` and `message` through with the HTTP status.
 | `digilocker.initialize`| POST | `/digilocker/initialize` | `POST /v1/sure-pass/digilocker/initialize` |
 | `digilocker.complete`  | GET  | `/digilocker/complete-flow/{client_id}` | `GET /v1/sure-pass/complete-flow/{client_id}` |
 | `credentials.stats`    | GET  | `/credentials/{credential_id}/stats` | `GET /v1/holder/stats` |
+| `credentials.details`  | GET  | `/credentials/{credential_id}/details` | none; data source and revocation trigger for the wallet |
 | `holder.registered`    | PUT  | `/registered` (one source, or every linked source) | none; the holder signed up in the holder service |
 | `holder.profile_updated` | PUT | `/profile` (one source, or every linked source) | none; the holder changed their profile in the holder service |
+
+`credentials.details` answers `data` as
+`{"data_source": {"tool_name": "..."} | null, "revocation": {"revoked_at",
+"reason_label", "origin", "trigger_label"} | null}` for a credential UUID
+owned by the holder from `X-Holder-Email`, and 404 otherwise. It never
+returns the subject identifier the data was gathered with.
 
 `holder.registered` carries no body. The DCS marks the holder from
 `X-Holder-Email` as registered and accepts that holder's open invites.
