@@ -15,6 +15,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.core.exceptions import AppError
+from app.core.telemetry import get_meter, span
 from app.features.operations.catalog import OPERATIONS_BY_NAME, HolderOperation
 from app.features.operations.exceptions import (
     HolderNotLinkedError,
@@ -42,6 +44,23 @@ logger = logging.getLogger(__name__)
 
 # Submissions carry form data, not files; anything larger is refused.
 MAX_BODY_BYTES = 256 * 1024
+
+# Operation names come from the client, so names outside the catalog
+# share one label and cannot grow metric cardinality.
+UNKNOWN_OPERATION = "unknown"
+OPERATION_SPAN_NAME = "connector.operation"
+
+operations_counter = get_meter().create_counter(
+    "everycred.holder.operations",
+    description="Holder operations forwarded to DCS sources, by result.",
+)
+
+
+def _summarise(results: list[OperationResult]) -> str:
+    ok_count = sum(result.ok for result in results)
+    if ok_count == len(results):
+        return "ok"
+    return "partial" if ok_count else "failed"
 
 
 def _check_request(
@@ -122,6 +141,35 @@ class OperationService:
             HolderNotLinkedError: The source never reported the holder.
         """
         operation = OPERATIONS_BY_NAME.get(request.operation)
+        operation_name = operation.name if operation else UNKNOWN_OPERATION
+        # "rejected" is a request refused before any source was called;
+        # "error" is anything unexpected.
+        result = "error"
+        with span(
+            OPERATION_SPAN_NAME,
+            attributes={"everycred.operation": operation_name},
+        ) as current:
+            try:
+                response = await self._run(operation, request)
+                result = _summarise(response.items)
+                current.set_attribute(
+                    "everycred.source_count", len(response.items)
+                )
+                return response
+            except AppError:
+                result = "rejected"
+                raise
+            finally:
+                current.set_attribute("everycred.result", result)
+                operations_counter.add(
+                    1, {"operation": operation_name, "result": result}
+                )
+
+    async def _run(
+        self,
+        operation: HolderOperation | None,
+        request: HolderOperationRequest,
+    ) -> HolderOperationResponse:
         if operation is None:
             raise UnknownOperationError(
                 f"Operation {request.operation!r} does not exist."

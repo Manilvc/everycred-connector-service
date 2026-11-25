@@ -1,7 +1,7 @@
 # Operations
 
 > Package: `app/features/operations/`
-> Last updated: 2026-10-28
+> Last updated: 2026-11-24
 
 ## Overview
 
@@ -203,6 +203,16 @@ No tables. The holder's links come from `holder_links` (see
 - **Linked sources only.** A holder's operations never reach a source
   that has not reported that holder. This limits fan-out.
 
+## Telemetry
+
+`OperationService.run` runs inside a `connector.operation` span with
+`everycred.operation` (the catalog name, or `unknown`),
+`everycred.result` (`ok`, `partial`, `failed`, `rejected`, `error`)
+and `everycred.source_count`, and adds one to the
+`everycred.holder.operations` counter with `operation` and `result`.
+The holder email is never recorded. See
+[telemetry](../core/telemetry.md).
+
 ## Known limitations
 
 - Adding an operation needs the matching route on the DCS. See
@@ -223,3 +233,5 @@ No tables. The holder's links come from `holder_links` (see
 - `test_path_traversal_in_params_is_rejected`
 - `test_source_without_holder_records_is_refused`
 - `test_details_operation_calls_the_credential_details_path`
+
+Span and metric tests are in `tests/core/test_telemetry.py`.

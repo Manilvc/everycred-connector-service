@@ -1,6 +1,6 @@
 # `app/core/http_client.py`
 
-> Last updated: 2026-10-21
+> Last updated: 2026-11-24
 
 ## Purpose
 
@@ -56,6 +56,12 @@ calls use `SOURCE_TIMEOUT_SECONDS` and holder-service deliveries use
 
 Forwarding the id lets a partner match a failed call on their side to
 the connector's log line.
+
+When telemetry is on, the httpx instrumentation patches
+`httpx.AsyncHTTPTransport`, so every call also gets a CLIENT span and
+a W3C `traceparent` header without any change here. Headers such as
+`X-Holder-Email` are never recorded on the span. See
+[telemetry](telemetry.md).
 
 ## Configuration
 

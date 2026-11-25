@@ -2,7 +2,10 @@
 
 Deployed environments emit one JSON object per line so logs can be
 indexed without parsing. Local runs can switch to a plain text format
-with ``LOG_JSON=false``. Both formats include the current request id.
+with ``LOG_JSON=false``. Both formats include the current request id
+and the OpenTelemetry trace and span ids, so a log line can be opened
+as a trace in Grafana. The ids are ``"-"`` outside a span or while
+telemetry is off.
 """
 
 import json
@@ -11,9 +14,15 @@ import sys
 from datetime import UTC, datetime
 
 from app.core.context import get_request_id
+from app.core.telemetry import (
+    SPAN_ID_FIELD,
+    TRACE_ID_FIELD,
+    install_log_correlation,
+)
 
 TEXT_LOG_FORMAT = (
-    "%(asctime)s %(levelname)-8s [%(request_id)s] %(name)s: %(message)s"
+    "%(asctime)s %(levelname)-8s [%(request_id)s] "
+    "trace_id=%(trace_id)s span_id=%(span_id)s %(name)s: %(message)s"
 )
 
 
@@ -39,6 +48,8 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", None),
+            TRACE_ID_FIELD: getattr(record, TRACE_ID_FIELD, None),
+            SPAN_ID_FIELD: getattr(record, SPAN_ID_FIELD, None),
         }
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
@@ -52,6 +63,9 @@ def configure_logging(level: str, use_json: bool) -> None:
         level: Minimum level name to emit, such as ``"INFO"``.
         use_json: Emit JSON lines when True, plain text otherwise.
     """
+    # The text format names %(trace_id)s, so every record needs the
+    # field even in processes that never start telemetry (the worker).
+    install_log_correlation()
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(RequestIdFilter())
     handler.setFormatter(

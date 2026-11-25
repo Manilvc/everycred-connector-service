@@ -1,7 +1,8 @@
 """Shared pytest fixtures."""
 
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 # Settings are read when app.main is imported, so the environment must
@@ -20,12 +21,26 @@ os.environ["HOLDER_SERVICE_WEBHOOK_URL"] = "https://holder.example.com/v1/x"
 os.environ["HOLDER_SERVICE_WEBHOOK_SECRET"] = "test-holder-webhook-" + "d" * 32
 os.environ["LOG_JSON"] = "false"
 os.environ["ENVIRONMENT"] = "local"
+# Telemetry stays off so no test exports to a collector, even when the
+# developer's shell sets one.
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = ""
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 from asgi_lifespan import LifespanManager  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from opentelemetry import metrics, trace  # noqa: E402
+from opentelemetry.sdk.metrics import Counter, MeterProvider  # noqa: E402
+from opentelemetry.sdk.metrics.export import (  # noqa: E402
+    AggregationTemporality,
+    InMemoryMetricReader,
+)
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E402
+    InMemorySpanExporter,
+)
 from sqlalchemy import event  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
@@ -42,6 +57,7 @@ import app.features.routing.models  # noqa: E402, F401
 import app.features.sources.models  # noqa: E402, F401
 from app.core.database import Base, get_db_session  # noqa: E402
 from app.core.http_client import get_http_client  # noqa: E402
+from app.core.telemetry.bootstrap import _instrument_libraries  # noqa: E402
 from app.main import create_app  # noqa: E402
 
 ADMIN_HEADERS = {"X-Admin-Key": os.environ["ADMIN_API_KEY"]}
@@ -92,6 +108,61 @@ async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         await connection.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(engine, expire_on_commit=False)
     await engine.dispose()
+
+
+@dataclass(frozen=True)
+class TelemetryCapture:
+    """In-memory sinks for the spans and metrics a test produced."""
+
+    spans: InMemorySpanExporter
+    metrics: InMemoryMetricReader
+
+    def counter_points(self, name: str) -> list[dict[str, Any]]:
+        """Return the attributes of each data point of counter ``name``."""
+        collected = self.metrics.get_metrics_data()
+        if collected is None:
+            return []
+        return [
+            {**point.attributes, "value": point.value}
+            for resource in collected.resource_metrics
+            for scope in resource.scope_metrics
+            for metric in scope.metrics
+            if metric.name == name
+            for point in metric.data.data_points
+        ]
+
+
+@pytest.fixture(scope="session")
+def telemetry_for_session() -> TelemetryCapture:
+    # OpenTelemetry accepts global providers only once per process, so
+    # one in-memory pair serves every telemetry test. Spans are not
+    # redacted here: tests check what instrumentation records before
+    # the exporter's safety net.
+    exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(tracer_provider)
+    # Delta temporality makes each read return only what happened since
+    # the previous read, so tests do not see each other's counts.
+    reader = InMemoryMetricReader(
+        preferred_temporality={Counter: AggregationTemporality.DELTA}
+    )
+    metrics.set_meter_provider(MeterProvider(metric_readers=[reader]))
+    # The library instrumentation configure_telemetry() applies, without
+    # its OTLP exporters. Engines created from now on through
+    # sqlalchemy.ext.asyncio.create_async_engine are traced.
+    _instrument_libraries(engines=(), celery=False)
+    return TelemetryCapture(exporter, reader)
+
+
+@pytest.fixture
+def telemetry(
+    telemetry_for_session: TelemetryCapture,
+) -> Iterator[TelemetryCapture]:
+    telemetry_for_session.spans.clear()
+    telemetry_for_session.metrics.get_metrics_data()
+    yield telemetry_for_session
+    telemetry_for_session.spans.clear()
 
 
 @pytest.fixture

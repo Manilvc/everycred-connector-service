@@ -1,6 +1,6 @@
 # `app/core/logging.py`
 
-> Last updated: 2026-10-21
+> Last updated: 2026-11-24
 
 ## Purpose
 
@@ -48,28 +48,37 @@ Writes one JSON object per record with these keys:
 | `logger` | Logger name, e.g. `app.features.sources.service` |
 | `message` | Formatted message |
 | `request_id` | Request id, or `null` |
+| `trace_id` | OpenTelemetry trace id (32 hex), or `"-"` outside a span |
+| `span_id` | OpenTelemetry span id (16 hex), or `"-"` outside a span |
 | `exception` | Traceback text, only when there is one |
 
 Example line:
 
 ```json
-{"timestamp": "2026-10-21T10:00:00.000000+00:00", "level": "INFO", "logger": "app.features.sources.service", "message": "Registered source dcs-india", "request_id": "3f9c2a1e0b7d4f58a6c1d2e3f4a5b6c7"}
+{"timestamp": "2026-10-21T10:00:00.000000+00:00", "level": "INFO", "logger": "app.features.sources.service", "message": "Registered source dcs-india", "request_id": "3f9c2a1e0b7d4f58a6c1d2e3f4a5b6c7", "trace_id": "0af7651916cd43dd8448eb211c80319c", "span_id": "b7ad6b7169203331"}
 ```
 
 ### `TEXT_LOG_FORMAT`
 
-`"%(asctime)s %(levelname)-8s [%(request_id)s] %(name)s: %(message)s"`.
+`"%(asctime)s %(levelname)-8s [%(request_id)s] trace_id=%(trace_id)s span_id=%(span_id)s %(name)s: %(message)s"`.
 Used when `LOG_JSON=false`.
 
 ## How it works
 
-1. `configure_logging` builds a `StreamHandler` on `sys.stdout` and adds
+1. `configure_logging` calls `install_log_correlation()` from
+   `app/core/telemetry/`, which wraps the log record factory so every
+   record carries `trace_id` and `span_id` (`"-"` outside a span or
+   while telemetry is off). It runs here, not only in the lifespan,
+   because the worker calls `configure_logging` before it starts its
+   telemetry. Its lines carry the ids of the job span they are logged
+   in. See [telemetry](telemetry.md).
+2. `configure_logging` builds a `StreamHandler` on `sys.stdout` and adds
    `RequestIdFilter` to it. The filter sets `request_id` on each record
    as it is emitted.
-2. The formatter is `JsonFormatter` or the text format.
-3. The root logger's handlers are cleared and replaced, so a second call
+3. The formatter is `JsonFormatter` or the text format.
+4. The root logger's handlers are cleared and replaced, so a second call
    does not duplicate lines.
-4. Uvicorn loggers are set to propagate to the root logger.
+5. Uvicorn loggers are set to propagate to the root logger.
 
 Modules create their own loggers with `logging.getLogger(__name__)`.
 

@@ -27,9 +27,16 @@ from app.core.exceptions import register_exception_handlers
 from app.core.http_client import create_http_client
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.core.telemetry import (
+    configure_telemetry,
+    instrument_app,
+    shutdown_telemetry,
+)
 from app.features.health.router import router as health_router
 
 logger = logging.getLogger(__name__)
+
+TELEMETRY_SERVICE_NAME = "everycred-connector-service"
 
 
 @asynccontextmanager
@@ -42,6 +49,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[dict[str, Any]]:
     """
     settings = get_settings()
     db_engine = create_database_engine(settings)
+    # Started here rather than at import so the exporter threads belong
+    # to this worker process; a no-op without OTEL_EXPORTER_OTLP_*.
+    telemetry = configure_telemetry(
+        TELEMETRY_SERVICE_NAME,
+        service_version=settings.service_version,
+        engines=[db_engine],
+    )
     http_client = create_http_client(settings)
     logger.info(
         "Starting %s %s in %s",
@@ -58,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[dict[str, Any]]:
     finally:
         await http_client.aclose()
         await db_engine.dispose()
+        shutdown_telemetry(telemetry)
         logger.info("Shutdown complete")
 
 
@@ -89,6 +104,8 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if docs_enabled else None,
         generate_unique_id_function=_build_operation_id,
     )
+    # Must run before the first request builds the middleware stack.
+    instrument_app(app)
 
     # Middleware added last runs first, so the request context wraps
     # everything, including CORS preflight responses.
@@ -98,7 +115,16 @@ def create_app() -> FastAPI:
             allow_origins=settings.cors_allowed_origins,
             allow_credentials=False,
             allow_methods=["GET", "POST", "PATCH"],
-            allow_headers=["Content-Type", "X-API-Key", "X-Request-ID"],
+            # traceparent, tracestate and baggage let a web client's
+            # trace continue into this service.
+            allow_headers=[
+                "Content-Type",
+                "X-API-Key",
+                "X-Request-ID",
+                "traceparent",
+                "tracestate",
+                "baggage",
+            ],
         )
     app.add_middleware(RequestContextMiddleware)
 

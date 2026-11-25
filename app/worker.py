@@ -31,6 +31,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import create_database_engine, create_session_factory
 from app.core.http_client import create_http_client
 from app.core.logging import configure_logging
+from app.core.telemetry import configure_telemetry, shutdown_telemetry, span
 from app.features.notifications.service import NotificationService
 
 logger = logging.getLogger("app.worker")
@@ -40,22 +41,45 @@ BATCH_SIZE = 50
 HEARTBEAT_FILE = Path(tempfile.gettempdir()) / "everycred-connector-heartbeat"
 HEARTBEAT_MAX_AGE_SECONDS = 120
 
+TELEMETRY_SERVICE_NAME = "everycred-connector-worker"
+DELIVER_JOB_SPAN = "holder_notification.deliver_due"
+BATCH_SIZE_ATTRIBUTE = "everycred.worker.batch_size"
+PROCESSED_ATTRIBUTE = "everycred.worker.processed"
+
 
 async def run_once(
     session_factory: async_sessionmaker[AsyncSession],
     http_client: httpx.AsyncClient,
     settings: Settings,
 ) -> int:
-    """Deliver one batch of due notifications; return how many succeeded."""
+    """Deliver one batch of due notifications; return how many succeeded.
+
+    The batch runs in one span. A failure records the error on it and
+    re-raises, so the round still logs it as failed.
+    """
     async with session_factory() as session:
         notifications = NotificationService(session, http_client, settings)
-        return await notifications.deliver_due(BATCH_SIZE)
+        with span(
+            DELIVER_JOB_SPAN,
+            attributes={BATCH_SIZE_ATTRIBUTE: BATCH_SIZE},
+        ) as job:
+            delivered = await notifications.deliver_due(BATCH_SIZE)
+            job.set_attribute(PROCESSED_ATTRIBUTE, delivered)
+    return delivered
 
 
 async def run_forever(stop: asyncio.Event) -> None:
     """Loop until ``stop`` is set, logging (not raising) failed rounds."""
     settings = get_settings()
     engine = create_database_engine(settings)
+    # The engine is created first because configure_telemetry() traces
+    # the engines it is given; an engine created later would be missed.
+    # A no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
+    telemetry = configure_telemetry(
+        TELEMETRY_SERVICE_NAME,
+        service_version=settings.service_version,
+        engines=[engine],
+    )
     session_factory = create_session_factory(engine)
     http_client = create_http_client(settings)
     if settings.holder_service_webhook_url is None:
@@ -85,6 +109,7 @@ async def run_forever(stop: asyncio.Event) -> None:
     finally:
         await http_client.aclose()
         await engine.dispose()
+        shutdown_telemetry(telemetry)
         logger.info("Worker stopped")
 
 

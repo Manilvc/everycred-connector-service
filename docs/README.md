@@ -74,7 +74,9 @@ flowchart LR
 | `features/health` | Probes | [health](features/health.md) |
 | `normalizers` | Source formats | [normalizers](features/normalizers.md) |
 
-Core modules are documented in [`docs/core/`](core/). What a DCS must
+Core modules are documented in [`docs/core/`](core/); tracing, metrics
+and trace ids in logs are in [`core/telemetry.md`](core/telemetry.md).
+What a DCS must
 implement is in [`dcs_contract.md`](dcs_contract.md). Running one
 connector for DCS instances in several regions is described in
 [`multi_region_deployment.md`](multi_region_deployment.md).
